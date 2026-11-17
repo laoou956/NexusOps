@@ -1,0 +1,95 @@
+services:
+  nexusops-python:
+    build:
+      context: ../NexusOps
+      dockerfile: Dockerfile
+      target: production
+    container_name: nexusops-python
+    ports:
+      - "127.0.0.1:8000:8000"
+    env_file:
+      - ../NexusOps/.env
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-nexusops123}
+      REDIS_URL: redis://:${REDIS_PASSWORD:-nexusops123}@redis:6379/0
+      CHROMA_PERSIST_DIRECTORY: /app/data/chroma
+      EVAL_BASELINE_PATH: /app/data/eval/baseline.json
+      NEXUSOPS_SKILLS_DIR: /app/skills
+    volumes:
+      - nexusops-python-data:/app/data
+      - ../NexusOps/skills:/app/skills
+      - ../NexusOps/config/mcp_servers.json:/app/config/mcp_servers.json:ro
+    depends_on:
+      redis:
+        condition: service_started
+      chromadb:
+        condition: service_started
+    restart: unless-stopped
+    networks:
+      - nexusops-network
+
+  redis:
+    image: redis:7-alpine
+    container_name: nexusops-redis
+    command: redis-server --appendonly yes --requirepass ${REDIS_PASSWORD:-nexusops123}
+    volumes:
+      - redis-data:/data
+    restart: unless-stopped
+    networks:
+      - nexusops-network
+
+  chromadb:
+    image: chromadb/chroma:0.5.23
+    container_name: nexusops-chromadb
+    ports:
+      - "127.0.0.1:8001:8000"
+    environment:
+      IS_PERSISTENT: "TRUE"
+      PERSIST_DIRECTORY: /chroma/chroma
+      ANONYMIZED_TELEMETRY: "FALSE"
+    volumes:
+      - chromadb-data:/chroma/chroma
+    restart: unless-stopped
+    networks:
+      - nexusops-network
+
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: nexusops-frontend
+    environment:
+      PYTHON_API_URL: /api/python
+    ports:
+      - "${FRONTEND_PORT:-5174}:80"
+    depends_on:
+      nexusops-python:
+        condition: service_started
+    restart: unless-stopped
+    networks:
+      - nexusops-network
+
+  nginx:
+    image: nginx:1.27-alpine
+    container_name: nexusops-gateway
+    ports:
+      - "127.0.0.1:8088:80"
+    volumes:
+      - ./docker/nginx-gateway.conf:/etc/nginx/conf.d/default.conf:ro
+    depends_on:
+      frontend:
+        condition: service_started
+      nexusops-python:
+        condition: service_started
+    restart: unless-stopped
+    networks:
+      - nexusops-network
+
+networks:
+  nexusops-network:
+    driver: bridge
+
+volumes:
+  redis-data:
+  chromadb-data:
+  nexusops-python-data:

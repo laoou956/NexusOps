@@ -1,0 +1,27 @@
+# 在现有 Python 数据环境上启动 Web 前端。
+# docker compose -f docker-compose.yml -f docker-compose.web.yml up -d --build
+services:
+  frontend:
+    build:
+      context: ../NexusOpsFrontend
+      dockerfile: Dockerfile
+    container_name: nexusops-web
+    environment:
+      PYTHON_API_URL: /api/python
+    ports:
+      - "127.0.0.1:5174:80"
+    volumes:
+      - ./config/nginx/frontend.conf:/etc/nginx/conf.d/default.conf:ro
+    depends_on:
+      nexusops:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - nexusops-network
+
+  nginx:
+    volumes:
+      - ./config/nginx/web-gateway.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      frontend:
+        condition: service_started
